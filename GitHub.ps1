@@ -30,9 +30,7 @@ Param(
 
         # Browse descendant directories
         $Directories = $Objects | Where {$_.type -eq "dir"}
-        $Directories | Foreach-Object { 
-            Invoke-GithubDownload -Owner $Owner -Repo $Repo -Path $_.path -Destination $($Destination + '\' + $_.name)
-        }
+        $Directories | Foreach-Object {Invoke-GithubDownload -Owner $Owner -Repo $Repo -Path $_.path -Destination $($Destination + '\' + $_.name)}
     }
     Catch {
         Write-Error "$($_.Exception.Message)`n$($_.ErrorDetails.Message)"
