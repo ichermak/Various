@@ -9,7 +9,7 @@ $Tm1HttpPortNumber = '5898'
 $Destination = "$PSScriptRoot\" + $MyInvocation.MyCommand.Name + '.csv'
 
 # Functions
-function Export-Content {
+function Export-PublicContent {
     param (
         [parameter(Mandatory=$True)] $ServerName,
         [parameter(Mandatory=$True)] $Content,
@@ -17,7 +17,7 @@ function Export-Content {
         [parameter(Mandatory=$True)] $Destination
     )
 
-    $Header = 'Server.Name' + ';' + 'Content.Path' + ';' + 'Content.Odata.type' + ';' + 'Content.ID' + ';' + 'Content.Name' + ';' + 'Content.Document.ID' + ';' + 'Content.Document.Name' + ';' + 'Content.Document.Size (Octet)' + ';' + 'Content.Document.LastUpdated'
+    $Header = 'Server.Name' + ';' + 'Public/Private' + ';' + 'Content.Path' + ';' + 'Content.Odata.type' + ';' + 'Content.ID' + ';' + 'Content.Name' + ';' + 'Content.Document.ID' + ';' + 'Content.Document.Name' + ';' + 'Content.Document.Size (Octet)' + ';' + 'Content.Document.LastUpdated'
 
     foreach ($SubContent in $Content.Contents) {
         $SubContentPath = $ContentPath + '\' + $SubContent.Name
@@ -33,7 +33,36 @@ function Export-Content {
                 $Header >> $Destination
             }
 
-            $ServerName + ';' + $SubContentPath + ';' + $SubContent.'@odata.type' + ';' + $SubContent.ID + ';' + $SubContent.Name + ';' + $SubContent.Document.ID + ';' + $SubContent.Document.Name + ';' + $SubContent.Document.Size + ';' + $SubContent.Document.LastUpdated >> $Destination
+            $ServerName + ';' + 'Public' + ';' + $SubContentPath + ';' + $SubContent.'@odata.type' + ';' + $SubContent.ID + ';' + $SubContent.Name + ';' + $SubContent.Document.ID + ';' + $SubContent.Document.Name + ';' + $SubContent.Document.Size + ';' + $SubContent.Document.LastUpdated >> $Destination
+        }
+    }
+}
+
+function Export-PrivateContent {
+    param (
+        [parameter(Mandatory=$True)] $ServerName,
+        [parameter(Mandatory=$True)] $Content,
+        [parameter(Mandatory=$True)] $ContentPath,
+        [parameter(Mandatory=$True)] $Destination
+    )
+
+    $Header = 'Server.Name' + ';' + 'Public/Private' + ';' + 'Content.Path' + ';' + 'Content.Odata.type' + ';' + 'Content.ID' + ';' + 'Content.Name' + ';' + 'Content.Document.ID' + ';' + 'Content.Document.Name' + ';' + 'Content.Document.Size (Octet)' + ';' + 'Content.Document.LastUpdated'
+
+    foreach ($SubContent in $Content.PrivateContents) {
+        $SubContentPath = $ContentPath + '\' + $SubContent.Name
+        if ($SubContent.'@odata.type' -like '#ibm.tm1.api.*.Folder') {
+            Export-Content -ServerName $ServerName -Content $SubContent -ContentPath $SubContentPath -Destination $Destination
+        }
+        elseif ($SubContent.'@odata.type' -like '#ibm.tm1.api.*.DocumentReference') {
+            If(-Not (Test-Path -Path $Destination)) {
+                $Header >> $Destination
+            }
+
+            If(-not (Get-Content -Path $Destination)) {
+                $Header >> $Destination
+            }
+
+            $ServerName + ';' + 'Private' + ';' + $SubContentPath + ';' + $SubContent.'@odata.type' + ';' + $SubContent.ID + ';' + $SubContent.Name + ';' + $SubContent.Document.ID + ';' + $SubContent.Document.Name + ';' + $SubContent.Document.Size + ';' + $SubContent.Document.LastUpdated >> $Destination
         }
     }
 }
@@ -91,19 +120,32 @@ foreach ($Tm1Server in $Tm1Servers.value) {
     }
 
     # Get applications
-    $Tm1RestRequest = 'Contents(''Applications'')?$expand=tm1.Folder/Contents($expand=tm1.Folder/Contents($expand=tm1.Folder/Contents($expand=tm1.Folder/Contents($expand=tm1.Folder/Contents($expand=tm1.Folder/Contents,tm1.DocumentReference/Document))))),tm1.Folder/PrivateContents($expand=tm1.Folder/PrivateContents($expand=tm1.Folder/PrivateContents($expand=tm1.Folder/PrivateContents($expand=tm1.Folder/PrivateContents($expand=tm1.Folder/PrivateContents,tm1.DocumentReference/Document)))))'
     $Tm1RestMethod = 'GET'
+    $Tm1RestRequest = 'Contents(''Applications'')?$expand=tm1.Folder/Contents($expand=tm1.Folder/Contents($expand=tm1.Folder/Contents($expand=tm1.Folder/Contents($expand=tm1.Folder/Contents($expand=tm1.Folder/Contents,tm1.DocumentReference/Document)))))'
     $Tm1RestRequestUrl = $Tm1RestApiUrl + '/' + $Tm1RestApiVersion + '/' + $Tm1RestRequest
     $Tm1RestRequestUrl = [System.Web.HttpUtility]::UrlPathEncode($Tm1RestRequestUrl)
 
     if ($PSEdition -ne 'Core') {
-        $Tm1Applications = Invoke-RestMethod -WebSession $Tm1WebSession -Method $Tm1RestMethod -uri $Tm1RestRequestUrl
+        $Tm1PublicApplications = Invoke-RestMethod -WebSession $Tm1WebSession -Method $Tm1RestMethod -uri $Tm1RestRequestUrl
     }
     else {
-        $Tm1Applications = Invoke-RestMethod -WebSession $Tm1WebSession -SkipCertificateCheck -Method $Tm1RestMethod -uri $Tm1RestRequestUrl
+        $Tm1PublicApplications = Invoke-RestMethod -WebSession $Tm1WebSession -SkipCertificateCheck -Method $Tm1RestMethod -uri $Tm1RestRequestUrl
     }
 
-    Export-Content -ServerName $Tm1Server.Name -Content $Tm1Applications -ContentPath $Tm1Applications.Name -Destination $Destination
+    Export-PublicContent -ServerName $Tm1Server.Name -Content $Tm1PublicApplications -ContentPath $Tm1PublicApplications.Name -Destination $Destination
+
+    $Tm1RestRequest = 'Contents(''Applications'')?$expand=tm1.Folder/PrivateContents($expand=tm1.Folder/PrivateContents($expand=tm1.Folder/PrivateContents($expand=tm1.Folder/PrivateContents($expand=tm1.Folder/PrivateContents($expand=tm1.Folder/PrivateContents,tm1.DocumentReference/Document)))))'
+    $Tm1RestRequestUrl = $Tm1RestApiUrl + '/' + $Tm1RestApiVersion + '/' + $Tm1RestRequest
+    $Tm1RestRequestUrl = [System.Web.HttpUtility]::UrlPathEncode($Tm1RestRequestUrl)
+
+    if ($PSEdition -ne 'Core') {
+        $Tm1PrivateApplications = Invoke-RestMethod -WebSession $Tm1WebSession -Method $Tm1RestMethod -uri $Tm1RestRequestUrl
+    }
+    else {
+        $Tm1PrivateApplications = Invoke-RestMethod -WebSession $Tm1WebSession -SkipCertificateCheck -Method $Tm1RestMethod -uri $Tm1RestRequestUrl
+    }
+
+    Export-PrivateContent -ServerName $Tm1Server.Name -Content $Tm1PrivateApplications -ContentPath $Tm1PrivateApplications.Name -Destination $Destination
 
     # Logout        
     $Tm1RestRequestUrl = $Tm1RestApiUrl + '/' + 'logout'
